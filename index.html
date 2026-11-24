@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>My Clipper AI</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#151f31;--line:#2b3a52;--txt:#f4f7fb;--muted:#aab7ca;--blue:#3978f6}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#101c32,#090e18 65%);font:16px system-ui;color:var(--txt)}
+main{max-width:760px;margin:auto;padding:22px 15px 50px}.brand{font-weight:800;letter-spacing:.08em;color:#8db5ff;font-size:13px}
+h1{font-size:30px;margin:8px 0}p{color:var(--muted);line-height:1.5}.panel{background:#151f31;border:1px solid var(--line);border-radius:18px;padding:16px;margin:16px 0}
+label{display:block;font-size:14px;color:#dce6f5;margin:12px 0 6px}
+input,select,button{font:inherit;border-radius:11px;padding:12px;width:100%;border:1px solid var(--line);background:#0d1728;color:white}
+input[type=file]{padding:10px}button{border:0;background:var(--blue);font-weight:700;margin-top:12px;cursor:pointer}
+button.secondary{background:#263750}button:disabled{opacity:.5}
+video{width:100%;max-height:380px;background:#05080e;border-radius:12px;margin-top:12px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{font-size:12px;color:var(--muted)}
+.clip{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+a{color:#9fc0ff}.status{font-size:13px;color:#b8d0ff;white-space:pre-wrap}.pill{font-size:11px;color:#a9c6ff}
+</style></head>
+<body><main>
+<div class="brand">MY PERSONAL VIDEO TOOL</div>
+<h1>My Clipper AI</h1>
+<p>Potong video panjang menjadi klip pendek langsung di browser Android. File video diproses di perangkatmu.</p>
+<section class="panel">
+<h3>1. Masukkan video</h3>
+<input id="file" type="file" accept="video/*">
+<video id="video" controls playsinline></video>
+<div id="info" class="hint">Belum ada video dipilih.</div>
+</section>
+<section class="panel">
+<h3>2. Atur klip</h3>
+<div class="row">
+<div><label>Durasi tiap klip</label><select id="length"><option value="30">30 detik</option><option value="45" selected>45 detik</option><option value="60">60 detik</option><option value="90">90 detik</option></select></div>
+<div><label>Jumlah klip</label><select id="count"><option>3</option><option selected>5</option><option>8</option><option>10</option></select></div>
+</div>
+<label>Mulai pencarian dari (detik)</label><input id="from" type="number" min="0" value="0">
+<button id="suggest" class="secondary" disabled>Buat saran bagian video</button>
+<div id="clips"></div>
+<p class="hint">Catatan: saran pada versi awal ini membagi video menjadi beberapa bagian. Ini belum AI pemahaman isi/transkrip; fitur pencari momen menarik akan ditambahkan pada tahap berikutnya.</p>
+</section>
+<section class="panel">
+<h3>3. Ekspor klip</h3>
+<label>Format</label><select id="format"><option value="original">Ukuran asli</option><option value="vertical">Vertikal 9:16 (beta)</option></select>
+<button id="export" disabled>Ekspor klip terpilih</button>
+<div id="status" class="status"></div>
+<div id="downloads"></div>
+</section>
+<p class="hint">Tips: gunakan video pendek dulu untuk tes. Jangan tutup tab saat ekspor. Performa bergantung pada HP dan browser.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id), video=$('video');
+let fileUrl=null, clips=[], selected=new Set(), busy=false;
+$('file').addEventListener('change',()=>{
+ const f=$('file').files[0]; if(!f)return;
+ if(fileUrl)URL.revokeObjectURL(fileUrl);
+ fileUrl=URL.createObjectURL(f);video.src=fileUrl;
+ video.onloadedmetadata=()=>{$('info').textContent=`${f.name} • ${Math.round(video.duration)} detik`; $('suggest').disabled=false; $('export').disabled=false;};
+ $('clips').innerHTML='';$('downloads').innerHTML='';clips=[];selected.clear();
+});
+$('suggest').onclick=()=>{
+ const len=Number($('length').value),n=Number($('count').value),start=Math.max(0,Number($('from').value)||0),duration=video.duration;
+ clips=[];selected.clear();
+ if(start>=duration){$('status').textContent='Waktu mulai melebihi durasi video.';return;}
+ // Distribute candidate windows across the available timeline.
+ const maxStart=Math.max(start,duration-len);
+ for(let i=0;i<n;i++){
+   const s=n===1?start:start+(maxStart-start)*(i/(n-1));
+   const e=Math.min(duration,s+len);if(e-s<3)continue;
+   clips.push({s,e});selected.add(clips.length-1);
+ }
+ renderClips();$('status').textContent=`${clips.length} bagian video disarankan. Pilih bagian yang ingin diekspor.`;
+};
+function renderClips(){
+ $('clips').innerHTML='';
+ clips.forEach((c,i)=>{
+  const d=document.createElement('div');d.className='clip';
+  const left=document.createElement('div');left.innerHTML=`<b>Klip ${i+1}</b><div class="hint">${fmt(c.s)} – ${fmt(c.e)}</div>`;
+  const check=document.createElement('input');check.type='checkbox';check.checked=selected.has(i);check.style.width='22px';
+  check.onchange=()=>check.checked?selected.add(i):selected.delete(i);
+  const prev=document.createElement('button');prev.textContent='Pratinjau';prev.className='secondary';prev.style.width='auto';prev.style.margin=0;
+  prev.onclick=()=>{video.currentTime=c.s;video.play();};
+  d.append(left,prev,check);$('clips').append(d);
+ });
+}
+function fmt(s){return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
+$('export').onclick=async()=>{
+ if(busy||!selected.size)return;
+ if(!('MediaRecorder'in window)||!video.captureStream){$('status').textContent='Browser ini belum mendukung ekspor. Coba Chrome Android versi terbaru.';return;}
+ busy=true;$('export').disabled=true;$('downloads').innerHTML='';
+ const chosen=[...selected].sort((a,b)=>a-b);
+ try{
+  for(let k=0;k<chosen.length;k++){
+   const c=clips[chosen[k]];
+   $('status').textContent=`Mengekspor klip ${k+1} dari ${chosen.length}…`;
+   const blob=await recordSegment(c.s,c.e,$('format').value==='vertical');
+   const url=URL.createObjectURL(blob),a=document.createElement('a');
+   a.href=url;a.download=`my-clipper-${k+1}.webm`;a.textContent=`Unduh klip ${k+1}`;
+   a.style.display='block';a.style.padding='9px 0';$('downloads').append(a);
+  }
+  $('status').textContent='Selesai. Tekan setiap tautan untuk menyimpan klip.';
+ }catch(e){$('status').textContent='Ekspor gagal: '+e.message+'. Coba video lebih pendek atau format ukuran asli.';}
+ busy=false;$('export').disabled=false;
+};
+function recordSegment(start,end,vertical){
+ return new Promise(async(resolve,reject)=>{
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+  const w=video.videoWidth,h=video.videoHeight;
+  if(!w||!h)return reject(new Error('Video belum siap'));
+  canvas.width=vertical?720:w;canvas.height=vertical?1280:h;
+  const stream=canvas.captureStream(25);
+  const source=video.captureStream();
+  source.getAudioTracks().forEach(t=>stream.addTrack(t));
+  let chunks=[],rec;
+  try{rec=new MediaRecorder(stream,{mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'});}
+  catch(e){return reject(e);}
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  rec.onerror=()=>reject(new Error('Perekam mengalami masalah'));
+  rec.onstop=()=>{stream.getTracks().forEach(t=>t.stop());source.getTracks().forEach(t=>t.stop());resolve(new Blob(chunks,{type:'video/webm'}));};
+  let raf;
+  const draw=()=>{
+   if(rec.state!=='recording')return;
+   if(vertical){
+    const target=9/16,src=w/h;let sw=w,sh=h,sx=0,sy=0;
+    if(src>target){sw=h*target;sx=(w-sw)/2}else{sh=w/target;sy=(h-sh)/2}
+    ctx.drawImage(video,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+   }else ctx.drawImage(video,0,0,canvas.width,canvas.height);
+   raf=requestAnimationFrame(draw);
+  };
+  video.pause();video.currentTime=start;
+  await new Promise(r=>video.onseeked=r);
+  rec.start();video.play();draw();
+  const check=()=>{if(video.currentTime>=end||video.ended){cancelAnimationFrame(raf);video.pause();if(rec.state==='recording')rec.stop();}else setTimeout(check,150)};
+  check();
+ });
+}
+</script></body></html>
